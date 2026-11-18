@@ -72,6 +72,14 @@ export interface IRequestContext<
 }
 
 /**
+ * Available server-side DOM emulation engines:
+ * - `'jsdom'`: Full DOM implementation backed by Node.js APIs (default on Node/Bun).
+ * - `'linkedom'`: Lightweight, pure-JS DOM parser optimized for Edge Isolates (Cloudflare Workers, V8 isolates).
+ * - `'auto'`: Automatically detects edge environment (e.g. Cloudflare Workers via `WebSocketPair` or `navigator.userAgent`) and uses `linkedom`, otherwise falls back to `jsdom`.
+ */
+export type SSREngine = 'jsdom' | 'linkedom' | 'auto';
+
+/**
  * Options for `renderAurelia()` and `renderToString()`.
  */
 export interface RenderOptions<
@@ -84,6 +92,8 @@ export interface RenderOptions<
   timeout?: number;
   registrations?: readonly unknown[];
   settle?: number;
+  /** DOM emulation engine to use (`'auto'` | `'jsdom'` | `'linkedom'`). Defaults to `'auto'`. */
+  engine?: SSREngine;
   /** Preserve Aurelia 2 `<!--au-->` hydration markers in SSR output (default: `true`). */
   preserveMarkers?: boolean;
   url?: string;

@@ -5,7 +5,7 @@
  */
 
 // Server-side API
-export { renderAurelia, renderToString } from './render.js';
+export { renderAurelia, renderToString, detectDefaultSSREngine } from './render.js';
 export { IRequestContext, resolveRequestContext } from './tokens.js';
 export { serializeState, validatePayload, stringifyPayload } from './serialize.js';
 export {
@@ -35,6 +35,7 @@ export type {
   HydrationPayload,
   HydrationResult,
   RenderOptions,
+  SSREngine,
   SerializeOptions,
   DocumentShell,
   DocumentOptions,

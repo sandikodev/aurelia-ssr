@@ -2,7 +2,7 @@
  * @aureliajs/ssr Server Entrypoint
  */
 
-export { renderAurelia, renderToString } from './render.js';
+export { renderAurelia, renderToString, detectDefaultSSREngine } from './render.js';
 export { IRequestContext, resolveRequestContext } from './tokens.js';
 export { serializeState, validatePayload, stringifyPayload } from './serialize.js';
 export {
@@ -20,6 +20,7 @@ export type {
   RenderContext,
   HydrationPayload,
   RenderOptions,
+  SSREngine,
   SerializeOptions,
   DocumentShell,
   DocumentOptions,

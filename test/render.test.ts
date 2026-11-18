@@ -193,4 +193,49 @@ describe('renderAurelia()', () => {
     const html = await renderAurelia({ component: ClientChart });
     expect(html).toBe('<div class="au-client-island" data-au-client="heavy-chart"></div>');
   });
+
+  it('supports LinkeDOM engine for Cloudflare Workers / Edge runtime compatibility', async () => {
+    const EdgeComponent = CustomElement.define(
+      {
+        name: 'edge-card',
+        template: '<section class="edge"><h1>${heading}</h1><p>Count: ${count}</p></section>',
+      },
+      class {
+        heading = 'Edge Ready';
+        count = 1;
+      }
+    );
+
+    // 1. Explicit engine: 'linkedom'
+    const linkedomHtml = await renderAurelia({
+      component: EdgeComponent,
+      props: { heading: 'Hello Cloudflare Workers', count: 42 },
+      engine: 'linkedom',
+      preserveMarkers: false,
+    });
+
+    expect(linkedomHtml).toContain('Hello Cloudflare Workers');
+    expect(linkedomHtml).toContain('Count: 42');
+    expect(linkedomHtml).toContain('class="edge"');
+
+    // 2. Explicit engine: 'jsdom'
+    const jsdomHtml = await renderAurelia({
+      component: EdgeComponent,
+      props: { heading: 'Hello JSDOM', count: 99 },
+      engine: 'jsdom',
+      preserveMarkers: false,
+    });
+
+    expect(jsdomHtml).toContain('Hello JSDOM');
+    expect(jsdomHtml).toContain('Count: 99');
+
+    // 3. Engine: 'auto'
+    const autoHtml = await renderAurelia({
+      component: EdgeComponent,
+      props: { heading: 'Hello Auto', count: 100 },
+      engine: 'auto',
+      preserveMarkers: false,
+    });
+    expect(autoHtml).toContain('Hello Auto');
+  });
 });

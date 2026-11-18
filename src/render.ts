@@ -7,7 +7,6 @@
  * zero secret instance mutations.
  */
 
-import { JSDOM } from 'jsdom';
 import {
   Aurelia,
   CustomElement,
@@ -20,11 +19,92 @@ import {
 } from 'aurelia';
 import { ISSRContext, StandardConfiguration } from '@aurelia/runtime-html';
 import { BrowserPlatform } from '@aurelia/platform-browser';
-import type { IRequestContext as IRequestContextData, RenderOptions } from './types.js';
+import type { IRequestContext as IRequestContextData, RenderOptions, SSREngine } from './types.js';
 import { IRequestContext, resolveRequestContext } from './tokens.js';
 import { escapeAttr } from './html.js';
 
 export { IRequestContext, resolveRequestContext };
+
+/**
+ * Detect the optimal SSR DOM emulation engine based on the runtime environment:
+ * - Detects Cloudflare Workers / `workerd` (via `WebSocketPair` or `Cloudflare` userAgent) -> `'linkedom'`
+ * - Defaults to `'jsdom'` on Node.js / Bun.
+ */
+export function detectDefaultSSREngine(): 'jsdom' | 'linkedom' {
+  if (
+    typeof (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair !== 'undefined' ||
+    (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Cloudflare')) ||
+    (typeof process !== 'undefined' && process.env?.WORKER === 'true')
+  ) {
+    return 'linkedom';
+  }
+  return 'jsdom';
+}
+
+interface SsrScope {
+  win: typeof globalThis;
+  host: HTMLElement;
+  dispose?: () => void;
+}
+
+/**
+ * Factory creating an isolated DOM environment using dynamic imports.
+ * This guarantees that Edge bundlers (like Cloudflare Wrangler) do not bundle
+ * Node's `vm` module when targeting `linkedom`.
+ */
+async function createSsrScope(
+  engine: SSREngine = 'auto',
+  url = 'http://localhost/'
+): Promise<SsrScope> {
+  const resolved = engine === 'auto' ? detectDefaultSSREngine() : engine;
+
+  if (resolved === 'linkedom') {
+    const { parseHTML } = await import('linkedom');
+    const { window, document } = parseHTML(
+      '<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>'
+    );
+
+    // W3C DOM adoptNode & CSSStyleDeclaration getPropertyPriority polyfills for LinkeDOM
+    if (!document.adoptNode) {
+      (document as unknown as { adoptNode: (node: Node) => Node }).adoptNode = (node: Node) => {
+        if (node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+        return node;
+      };
+    }
+
+    const testDiv = document.createElement('div');
+    const styleProto = Object.getPrototypeOf(testDiv.style);
+    if (styleProto && typeof styleProto.getPropertyPriority !== 'function') {
+      styleProto.getPropertyPriority = () => '';
+    }
+
+    return {
+      win: window as unknown as typeof globalThis,
+      host: document.getElementById('ssr-root') as unknown as HTMLElement,
+    };
+  }
+
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>', {
+    url,
+    contentType: 'text/html',
+    pretendToBeVisual: true,
+  });
+
+  return {
+    win: dom.window as unknown as typeof globalThis,
+    host: dom.window.document.getElementById('ssr-root') as unknown as HTMLElement,
+    dispose: () => {
+      try {
+        dom.window.close();
+      } catch {
+        // Ignore JSDOM teardown errors
+      }
+    },
+  };
+}
 
 /**
  * Request-scoped `ITemplateElementFactory` creating `<template>` nodes directly
@@ -34,18 +114,45 @@ export { IRequestContext, resolveRequestContext };
 class SsrTemplateElementFactory implements ITemplateElementFactory {
   private readonly platform = resolve(IPlatform);
 
-  public createTemplate(input: string | Node): HTMLTemplateElement {
+  public createTemplate(input: unknown): HTMLTemplateElement {
+    let raw: string | null = null;
+
     if (typeof input === 'string') {
+      raw = input;
+    } else if (
+      input &&
+      typeof input === 'object' &&
+      'index' in input &&
+      typeof (input as { index: unknown }).index === 'string'
+    ) {
+      // Bun HTMLBundle support: { index: '/path/to/template.html' }
+      try {
+        const fs = typeof process !== 'undefined' ? (globalThis as any).process?.getBuiltinModule?.('node:fs') ?? null : null;
+        if (fs?.readFileSync) {
+          raw = fs.readFileSync((input as { index: string }).index, 'utf8');
+        }
+      } catch {
+        // fallback
+      }
+    }
+
+    if (raw !== null) {
       const template = this.platform.document.createElement('template');
-      template.innerHTML = input;
+      template.innerHTML = raw;
       return template;
     }
-    if (input.nodeName !== 'TEMPLATE') {
-      const template = this.platform.document.createElement('template');
-      template.content.appendChild(input);
-      return template;
+
+    if (input && typeof input === 'object' && 'nodeName' in input) {
+      const node = input as Node;
+      if (node.nodeName !== 'TEMPLATE') {
+        const template = this.platform.document.createElement('template');
+        template.content.appendChild(node);
+        return template;
+      }
+      return node as HTMLTemplateElement;
     }
-    return input as HTMLTemplateElement;
+
+    return this.platform.document.createElement('template');
   }
 }
 
@@ -104,6 +211,7 @@ export async function renderAurelia<
     timeout = 5000,
     registrations,
     settle,
+    engine = 'auto',
     preserveMarkers = true,
     url = 'http://localhost/',
     params = {},
@@ -114,20 +222,14 @@ export async function renderAurelia<
     throw new Error('renderAurelia: component is required');
   }
 
-  // Client-only island boundary: emit minimal placeholder without spawning JSDOM
+  // Client-only island boundary: emit minimal placeholder without spawning DOM
   if (isClientOnlyComponent(component)) {
     const tag = resolveClientOnlyTag(component);
     return `<div class="au-client-island" data-au-client="${escapeAttr(tag)}"></div>`;
   }
 
-  const dom = new JSDOM('<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>', {
-    url,
-    contentType: 'text/html',
-    pretendToBeVisual: true,
-  });
-
-  const win = dom.window as unknown as typeof globalThis;
-  const platform = new BrowserPlatform(win);
+  const scope = await createSsrScope(engine, url);
+  const platform = new BrowserPlatform(scope.win);
   const container = DI.createContainer();
   const app = new Aurelia(container);
 
@@ -162,7 +264,7 @@ export async function renderAurelia<
       Object.assign(rootComponent, props);
     }
 
-    const host = dom.window.document.getElementById('ssr-root');
+    const host = scope.host;
     if (!host) {
       throw new Error('renderAurelia: host element #ssr-root not found');
     }
@@ -189,11 +291,7 @@ export async function renderAurelia<
     } catch {
       // Ignore dispose errors
     }
-    try {
-      dom.window.close();
-    } catch {
-      // Ignore JSDOM teardown errors
-    }
+    scope.dispose?.();
   }
 }
 

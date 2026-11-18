@@ -58,7 +58,8 @@
     }
   },
   "dependencies": {
-    "jsdom": "^23.0.0"
+    "jsdom": "^23.0.0",
+    "linkedom": "^0.18.15"
   },
   "devDependencies": {
     "@aurelia/platform-browser": "^2.0.0-rc.2",
