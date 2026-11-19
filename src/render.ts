@@ -34,7 +34,7 @@ export function detectDefaultSSREngine(): 'jsdom' | 'linkedom' {
   if (
     typeof (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair !== 'undefined' ||
     (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Cloudflare')) ||
-    (typeof process !== 'undefined' && process.env?.WORKER === 'true')
+    (typeof process !== 'undefined' && process.env && process.env.WORKER === 'true')
   ) {
     return 'linkedom';
   }
@@ -134,7 +134,7 @@ async function createSsrScope(
   url = 'http://localhost/'
 ): Promise<SsrScope> {
   // Statically eliminated in Cloudflare Worker builds (process.env.WORKER === 'true')
-  if (typeof process !== 'undefined' && process.env?.WORKER === 'true') {
+  if (typeof process !== 'undefined' && process.env && process.env.WORKER === 'true') {
     return createLinkedomScope();
   }
 
