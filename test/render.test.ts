@@ -238,4 +238,29 @@ describe('renderAurelia()', () => {
     });
     expect(autoHtml).toContain('Hello Auto');
   });
+
+  it('renders repeat.for elements with attributes in LinkeDOM without nested loop duplication', async () => {
+    const CardList = CustomElement.define(
+      {
+        name: 'card-list',
+        template: '<div><article repeat.for="item of items" class="card">${item.title}</article></div>',
+      },
+      class {
+        items = [{ title: 'Item 1' }, { title: 'Item 2' }, { title: 'Item 3' }];
+      }
+    );
+
+    // LinkeDOM must produce EXACTLY 3 articles, not duplicated (3x3 = 9)
+    const linkedomHtml = await renderAurelia({
+      component: CardList,
+      engine: 'linkedom',
+      preserveMarkers: false,
+    });
+
+    const matches = linkedomHtml.match(/<article class="card">/g) || [];
+    expect(matches.length).toBe(3);
+    expect(linkedomHtml).toBe(
+      '<div><!--au-start--><article class="card">Item 1</article><article class="card">Item 2</article><article class="card">Item 3</article><!--au-end--></div>'
+    );
+  });
 });

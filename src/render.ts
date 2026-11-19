@@ -47,6 +47,83 @@ interface SsrScope {
   dispose?: () => void;
 }
 
+async function createLinkedomScope(): Promise<SsrScope> {
+  const { parseHTML } = await import('linkedom');
+  const { window, document } = parseHTML(
+    '<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>'
+  );
+
+  // W3C DOM adoptNode & CSSStyleDeclaration getPropertyPriority polyfills for LinkeDOM
+  if (!document.adoptNode) {
+    (document as unknown as { adoptNode: (node: Node) => Node }).adoptNode = (node: Node) => {
+      if (node.parentNode) {
+        node.parentNode.removeChild(node);
+      }
+      return node;
+    };
+  }
+
+  // W3C DOM live NamedNodeMap polyfill for LinkeDOM
+  // LinkeDOM returns a static snapshot for element.attributes, which causes Aurelia's
+  // template compiler attribute classifier loop to re-process attributes like repeat.for
+  // leading to duplicate nested template controllers.
+  const elementProto = (window as unknown as { Element?: { prototype?: Record<string, unknown> } }).Element?.prototype;
+  if (elementProto && !elementProto.__au_live_attrs__) {
+    elementProto.__au_live_attrs__ = true;
+    Object.defineProperty(elementProto, 'attributes', {
+      get() {
+        const el = this as unknown as {
+          getAttributeNames: () => string[];
+          getAttributeNode: (name: string) => unknown;
+        };
+        return new Proxy({}, {
+          get(target, prop) {
+            if (prop === 'length') {
+              return el.getAttributeNames().length;
+            }
+            if (typeof prop === 'string' && /^\d+$/.test(prop)) {
+              const idx = Number(prop);
+              const names = el.getAttributeNames();
+              return names[idx] ? el.getAttributeNode(names[idx]) : undefined;
+            }
+            if (prop === 'item') {
+              return (idx: number) => {
+                const names = el.getAttributeNames();
+                return names[idx] ? el.getAttributeNode(names[idx]) : null;
+              };
+            }
+            if (prop === 'getNamedItem') {
+              return (name: string) => el.getAttributeNode(name);
+            }
+            if (prop === Symbol.iterator) {
+              return function* () {
+                const names = el.getAttributeNames();
+                for (const name of names) {
+                  yield el.getAttributeNode(name);
+                }
+              };
+            }
+            return Reflect.get(target, prop);
+          },
+        });
+      },
+      configurable: true,
+      enumerable: true,
+    });
+  }
+
+  const testDiv = document.createElement('div');
+  const styleProto = Object.getPrototypeOf(testDiv.style);
+  if (styleProto && typeof styleProto.getPropertyPriority !== 'function') {
+    styleProto.getPropertyPriority = () => '';
+  }
+
+  return {
+    win: window as unknown as typeof globalThis,
+    host: document.getElementById('ssr-root') as unknown as HTMLElement,
+  };
+}
+
 /**
  * Factory creating an isolated DOM environment using dynamic imports.
  * This guarantees that Edge bundlers (like Cloudflare Wrangler) do not bundle
@@ -56,34 +133,15 @@ async function createSsrScope(
   engine: SSREngine = 'auto',
   url = 'http://localhost/'
 ): Promise<SsrScope> {
+  // Statically eliminated in Cloudflare Worker builds (process.env.WORKER === 'true')
+  if (typeof process !== 'undefined' && process.env?.WORKER === 'true') {
+    return createLinkedomScope();
+  }
+
   const resolved = engine === 'auto' ? detectDefaultSSREngine() : engine;
 
   if (resolved === 'linkedom') {
-    const { parseHTML } = await import('linkedom');
-    const { window, document } = parseHTML(
-      '<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>'
-    );
-
-    // W3C DOM adoptNode & CSSStyleDeclaration getPropertyPriority polyfills for LinkeDOM
-    if (!document.adoptNode) {
-      (document as unknown as { adoptNode: (node: Node) => Node }).adoptNode = (node: Node) => {
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
-        }
-        return node;
-      };
-    }
-
-    const testDiv = document.createElement('div');
-    const styleProto = Object.getPrototypeOf(testDiv.style);
-    if (styleProto && typeof styleProto.getPropertyPriority !== 'function') {
-      styleProto.getPropertyPriority = () => '';
-    }
-
-    return {
-      win: window as unknown as typeof globalThis,
-      host: document.getElementById('ssr-root') as unknown as HTMLElement,
-    };
+    return createLinkedomScope();
   }
 
   const { JSDOM } = await import('jsdom');
@@ -127,7 +185,8 @@ class SsrTemplateElementFactory implements ITemplateElementFactory {
     ) {
       // Bun HTMLBundle support: { index: '/path/to/template.html' }
       try {
-        const fs = typeof process !== 'undefined' ? (globalThis as any).process?.getBuiltinModule?.('node:fs') ?? null : null;
+        const p = typeof process !== 'undefined' ? (process as unknown as { getBuiltinModule?: (id: string) => typeof import('node:fs') }) : null;
+        const fs = p?.getBuiltinModule ? p.getBuiltinModule('node:fs') : null;
         if (fs?.readFileSync) {
           raw = fs.readFileSync((input as { index: string }).index, 'utf8');
         }
