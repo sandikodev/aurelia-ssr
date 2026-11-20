@@ -11,7 +11,8 @@
     "noEmit": true,
     "types": ["bun-types", "node"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@aureliajs/ssr": ["../src/index.ts"]
     }
   },
   "include": ["src/**/*", "test/**/*"],
