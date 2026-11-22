@@ -26,7 +26,7 @@ function renderAttrs(attrs?: Readonly<Record<string, string>>): string {
   return parts.length > 0 ? ` ${parts.join(' ')}` : '';
 }
 
-function toArray(value?: string | readonly string[]): string[] {
+function toArray(value?: string | readonly string[] | false): string[] {
   if (!value) return [];
   return Array.isArray(value) ? value.filter(Boolean) : [value as string];
 }

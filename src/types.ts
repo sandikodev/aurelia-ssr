@@ -154,8 +154,8 @@ export interface DocumentOptions<
   rootTag?: string | false;
   htmlAttrs?: Readonly<Record<string, string>>;
   bodyAttrs?: Readonly<Record<string, string>>;
-  cssBundle?: string | readonly string[];
-  jsBundle?: string | readonly string[];
+  cssBundle?: string | readonly string[] | false;
+  jsBundle?: string | readonly string[] | false;
   head?: string;
   /** CSP nonce applied to external module `<script>` tags. */
   nonce?: string;
@@ -176,6 +176,21 @@ export interface HydrateFromServerOptions {
   scriptId?: string;
   /** Maximum acceptable payload age in ms (default: `30000`). */
   maxAge?: number;
+}
+
+/**
+ * Options for unified 1-step `renderDocument()` combining SSR rendering,
+ * state serialization, and complete HTML5 document shell building.
+ */
+export interface RenderDocumentOptions<
+  TComponent extends object = object,
+  TContext extends Record<string, unknown> = Record<string, unknown>,
+> extends RenderOptions<TComponent, TContext>,
+    DocumentOptions<TContext, ComponentProps<TComponent>> {
+  /** Logical component identifier for client hydration (defaults to CustomElement tag name or class name). */
+  componentName?: string;
+  /** Custom state serializer options. */
+  serialize?: SerializeOptions;
 }
 
 /**

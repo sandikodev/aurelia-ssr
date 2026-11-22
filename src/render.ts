@@ -144,6 +144,7 @@ async function createSsrScope(
     return createLinkedomScope();
   }
 
+  // @ts-ignore jsdom types are optional
   const { JSDOM } = await import('jsdom');
   const dom = new JSDOM('<!DOCTYPE html><html><body><div id="ssr-root"></div></body></html>', {
     url,
