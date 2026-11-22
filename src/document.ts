@@ -78,7 +78,7 @@ export async function renderDocument<
 ): Promise<string> {
   const opts: RenderDocumentOptions<TComponent, TContext> =
     typeof componentOrOptions === 'function' || maybeOptions !== undefined
-      ? { component: componentOrOptions as AureliaComponent<TComponent>, ...(maybeOptions || {}) }
+      ? { component: componentOrOptions as AureliaComponent<TComponent>, ...maybeOptions }
       : (componentOrOptions as RenderDocumentOptions<TComponent, TContext>);
 
   const component = opts.component;
