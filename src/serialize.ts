@@ -7,7 +7,7 @@
  * and script-context XSS escaping without opinionated key guessing.
  */
 
-import type { HydrationPayload, SerializeOptions } from './types.js';
+import type { HydrationPayload, SerializeOptions } from './types';
 
 /**
  * Serialize request context and initial loader data into a HydrationPayload.

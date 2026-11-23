@@ -8,7 +8,7 @@
  * - Client hydration payload generation via `HydrationPayload`
  */
 
-import { renderAurelia, createHtmlDocument, type HydrationPayload } from '@aureliajs/ssr';
+import { renderDocument } from '@aureliajs/ssr';
 import { AppRoot } from './components/app-root';
 
 export interface ServerRenderResult {
@@ -30,27 +30,11 @@ export async function renderAppPage(url: string = 'http://localhost:3000/'): Pro
     initialCount: 25,
   };
 
-  // 1. Render Aurelia component tree to HTML string with hydration markers
-  const appHtml = await renderAurelia({
-    component: AppRoot,
+  // 1-step unified CoC document rendering: handles SSR, state serialization, and HTML shell
+  const fullDocumentHtml = await renderDocument(AppRoot, {
     props: initialProps,
     url,
-    preserveMarkers: true,
-  });
-
-  // 2. Prepare hydration payload for client-side activation
-  const payload: HydrationPayload = {
-    component: 'app-root',
-    context: {},
-    initialData: initialProps,
-    timestamp: Date.now(),
-  };
-
-  // 3. Generate complete HTML5 document shell with embedded XSS-safe hydration script
-  const fullDocumentHtml = createHtmlDocument(appHtml, payload, {
     title: 'Aurelia 2 Pure SSR Reference',
-    cssBundle: '/style.css',
-    jsBundle: '/client.js',
   });
 
   return {

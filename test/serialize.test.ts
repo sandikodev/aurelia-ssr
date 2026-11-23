@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { serializeState, validatePayload, stringifyPayload } from '../src/serialize.js';
+import { serializeState, validatePayload, stringifyPayload } from '../src/serialize';
 
 describe('serializeState()', () => {
   it('preserves arbitrary application keys without opinionated regex redaction', async () => {

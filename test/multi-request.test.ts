@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { CustomElement } from 'aurelia';
-import { renderAurelia } from '../src/render.js';
+import { renderAurelia } from '../src/render';
 
 describe('Multiple requests to renderAurelia', () => {
   it('renders a component multiple times in separate requests without AUR0757', async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { CustomElement, resolve } from 'aurelia';
-import { renderAurelia, IRequestContext, resolveRequestContext } from '../src/render.js';
+import { renderAurelia, IRequestContext, resolveRequestContext } from '../src/render';
 
 describe('renderAurelia()', () => {
   it('renders canonical Aurelia 2 CustomElement without mutating globalThis', async () => {

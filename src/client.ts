@@ -8,9 +8,9 @@ export {
   peekHydrationPayload,
   clearHydration,
   createClientHydrator,
-} from './hydrate.js';
-export { IRequestContext, resolveRequestContext } from './tokens.js';
-export { DEFAULT_SCRIPT_ID } from './html.js';
+} from './hydrate';
+export { IRequestContext, resolveRequestContext } from './tokens';
+export { DEFAULT_SCRIPT_ID } from './html';
 export type {
   AureliaComponent,
   ComponentProps,
@@ -20,4 +20,4 @@ export type {
   HydrateFromServerOptions,
   ClientHydratorOptions,
   IRequestContext as IRequestContextType,
-} from './types.js';
+} from './types';

@@ -2,9 +2,10 @@
  * @aureliajs/ssr Server Entrypoint
  */
 
-export { renderAurelia, renderToString, detectDefaultSSREngine } from './render.js';
-export { IRequestContext, resolveRequestContext } from './tokens.js';
-export { serializeState, validatePayload, stringifyPayload } from './serialize.js';
+export { renderAurelia, renderToString, detectDefaultSSREngine } from './render';
+export { renderDocument, resolveComponentName } from './document';
+export { IRequestContext, resolveRequestContext } from './tokens';
+export { serializeState, validatePayload, stringifyPayload } from './serialize';
 export {
   DEFAULT_SCRIPT_ID,
   createDocumentShell,
@@ -13,17 +14,18 @@ export {
   escapeHtml,
   escapeAttr,
   validateHtmlStructure,
-} from './html.js';
+} from './html';
 export type {
   AureliaComponent,
   ComponentProps,
   RenderContext,
   HydrationPayload,
   RenderOptions,
+  RenderDocumentOptions,
   SSREngine,
   SerializeOptions,
   DocumentShell,
   DocumentOptions,
   DocumentTemplateContext,
   IRequestContext as IRequestContextType,
-} from './types.js';
+} from './types';

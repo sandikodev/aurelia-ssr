@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { JSDOM } from 'jsdom';
+import { CustomElement } from 'aurelia';
 import {
   DEFAULT_SCRIPT_ID,
   createDocumentShell,
@@ -8,8 +9,9 @@ import {
   escapeAttr,
   escapeHtml,
   validateHtmlStructure,
-} from '../src/html.js';
-import { serializeState } from '../src/serialize.js';
+} from '../src/html';
+import { serializeState } from '../src/serialize';
+import { renderDocument, resolveComponentName } from '../src/document';
 
 describe('HTML5 Document Builder', () => {
   it('embeds state via HTML5 standard <script type="application/json"> with zero window pollution', async () => {
@@ -84,5 +86,64 @@ describe('HTML5 Document Builder', () => {
       '&lt;script&gt;&quot;a&quot; &amp; &#39;b&#39;&lt;/script&gt;'
     );
     expect(escapeAttr('a"b&c\'d')).toBe('a&quot;b&amp;c&#39;d');
+  });
+
+  describe('renderDocument() Unified 1-Step CoC API', () => {
+    const ProfilePage = CustomElement.define(
+      {
+        name: 'profile-page',
+        template: '<section class="profile"><h1>Welcome ${username}</h1><p>Role: ${role}</p></section>',
+      },
+      class {
+        username = '';
+        role = 'User';
+      }
+    );
+
+    it('renders a full HTML5 document with zero config conventions', async () => {
+      const html = await renderDocument(ProfilePage, {
+        props: { username: 'sandikodev', role: 'Architect' },
+        title: 'User Profile',
+      });
+
+      expect(validateHtmlStructure(html)).toBe(true);
+      expect(html).toContain('<title>User Profile</title>');
+      expect(html).toContain('<link rel="stylesheet" href="/style.css" />');
+      expect(html).toContain('<script type="module" src="/client.js"></script>');
+      expect(html).toContain('<profile-page>');
+      expect(html).toContain('sandikodev');
+      expect(html).toContain('Architect');
+      expect(html).toContain(`id="${DEFAULT_SCRIPT_ID}"`);
+
+      const dom = new JSDOM(html);
+      const dataEl = dom.window.document.getElementById(DEFAULT_SCRIPT_ID);
+      expect(dataEl).not.toBeNull();
+      const payload = JSON.parse(dataEl?.textContent || '{}');
+      expect(payload.component).toBe('profile-page');
+      expect(payload.initialData).toEqual({ username: 'sandikodev', role: 'Architect' });
+      dom.window.close();
+    });
+
+    it('supports single options object form and allows disabling bundles', async () => {
+      const html = await renderDocument({
+        component: ProfilePage,
+        props: { username: 'admin' },
+        cssBundle: false,
+        jsBundle: false,
+        rootTag: 'custom-container',
+      });
+
+      expect(validateHtmlStructure(html)).toBe(true);
+      expect(html).not.toContain('<link rel="stylesheet"');
+      expect(html).not.toContain('<script type="module"');
+      expect(html).toContain('<custom-container>');
+      expect(html).toContain('admin');
+    });
+
+    it('resolves component names cleanly from classes and definitions', () => {
+      expect(resolveComponentName(ProfilePage)).toBe('profile-page');
+      class UserDashboardPage {}
+      expect(resolveComponentName(UserDashboardPage)).toBe('user-dashboard-page');
+    });
   });
 });

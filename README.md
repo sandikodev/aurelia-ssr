@@ -79,7 +79,37 @@ Peer dependencies: `aurelia` (`^2.0.0-rc.2`). Optional peers: `@aurelia/runtime-
 
 ## 4. Usage
 
-### Server-Side Rendering (`@aureliajs/ssr/server`)
+### Unified 1-Step Document Rendering (Convention over Configuration)
+
+For modern applications, `renderDocument()` provides a single, high-level API that automatically handles component rendering, state serialization, and HTML5 shell assembly with zero boilerplate:
+
+```ts
+import { renderDocument } from '@aureliajs/ssr/server';
+import { ProfilePage } from './pages/profile-page';
+
+// 1 line with automatic conventions (/style.css, /client.js, componentName, state hydration)
+const html = await renderDocument(ProfilePage, {
+  props: { username: 'sandiko' },
+  title: 'Profile — Aurelia 2 SSR',
+});
+```
+
+Options can be customized as needed (e.g., custom bundles, CSP nonce, context):
+```ts
+const html = await renderDocument(ProfilePage, {
+  props: { username: 'sandiko' },
+  context: { locale: 'en-US' },
+  title: 'Profile — Aurelia 2 SSR',
+  nonce: 'per-request-csp-nonce',
+  // bundle conventions default to /style.css and /client.js, or pass false to disable
+  cssBundle: '/assets/app.css',
+  jsBundle: '/assets/client.js',
+});
+```
+
+### Advanced Modular Control (Engine Primitives)
+
+If you are building custom meta-framework adapters or streaming pipelines, the low-level modular primitives remain available:
 
 ```ts
 import {
@@ -87,7 +117,7 @@ import {
   serializeState,
   createHtmlDocument,
 } from '@aureliajs/ssr/server';
-import { ProfilePage } from './pages/profile-page.js';
+import { ProfilePage } from './pages/profile-page';
 
 interface AppContext {
   locale: string;

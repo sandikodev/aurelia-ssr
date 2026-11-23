@@ -13,9 +13,9 @@ import type {
   HydrationPayload,
   HydrationResult,
   IRequestContext as IRequestContextData,
-} from './types.js';
-import { IRequestContext, resolveRequestContext } from './tokens.js';
-import { DEFAULT_SCRIPT_ID } from './html.js';
+} from './types';
+import { IRequestContext, resolveRequestContext } from './tokens';
+import { DEFAULT_SCRIPT_ID } from './html';
 
 export { IRequestContext, resolveRequestContext };
 export type { HydrationResult, ClientHydratorOptions, HydrateFromServerOptions };
@@ -119,6 +119,13 @@ export function hydrateFromServer<
   };
 }
 
+function kebabCase(str: string): string {
+  return str
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase();
+}
+
 function indexComponents(
   components: readonly Constructable[] | Readonly<Record<string, Constructable>>
 ): ReadonlyMap<string, Constructable> {
@@ -131,7 +138,10 @@ function indexComponents(
         ? CustomElement.getDefinition(comp).name
         : className;
       if (defName) map.set(defName, comp);
-      if (className) map.set(className, comp);
+      if (className) {
+        map.set(className, comp);
+        map.set(kebabCase(className), comp);
+      }
     }
     return map;
   }
@@ -140,6 +150,10 @@ function indexComponents(
     map.set(key, comp);
     if (CustomElement.isType(comp)) {
       map.set(CustomElement.getDefinition(comp).name, comp);
+    }
+    if (comp.name) {
+      map.set(comp.name, comp);
+      map.set(kebabCase(comp.name), comp);
     }
   }
   return map;

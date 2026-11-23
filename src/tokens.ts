@@ -6,7 +6,7 @@
  */
 
 import { DI, resolve, type IResolver } from 'aurelia';
-import type { IRequestContext as IRequestContextData } from './types.js';
+import type { IRequestContext as IRequestContextData } from './types';
 
 export type IRequestContext<
   TContext extends Record<string, unknown> = Record<string, unknown>,

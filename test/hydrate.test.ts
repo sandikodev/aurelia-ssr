@@ -8,9 +8,9 @@ import {
   isHydrationAvailable,
   peekHydrationPayload,
   resolveRequestContext,
-} from '../src/hydrate.js';
-import { DEFAULT_SCRIPT_ID, createHydrationScript } from '../src/html.js';
-import type { HydrationPayload } from '../src/types.js';
+} from '../src/hydrate';
+import { DEFAULT_SCRIPT_ID, createHydrationScript } from '../src/html';
+import type { HydrationPayload } from '../src/types';
 
 function createPayload(overrides?: Partial<HydrationPayload>): HydrationPayload {
   return {

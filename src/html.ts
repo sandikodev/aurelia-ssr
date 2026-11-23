@@ -11,8 +11,8 @@ import type {
   DocumentShell,
   DocumentTemplateContext,
   HydrationPayload,
-} from './types.js';
-import { stringifyPayload } from './serialize.js';
+} from './types';
+import { stringifyPayload } from './serialize';
 
 export const DEFAULT_SCRIPT_ID = '__AURELIA_SSR_DATA__';
 

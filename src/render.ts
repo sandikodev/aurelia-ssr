@@ -19,9 +19,9 @@ import {
 } from 'aurelia';
 import { ISSRContext, StandardConfiguration } from '@aurelia/runtime-html';
 import { BrowserPlatform } from '@aurelia/platform-browser';
-import type { IRequestContext as IRequestContextData, RenderOptions, SSREngine } from './types.js';
-import { IRequestContext, resolveRequestContext } from './tokens.js';
-import { escapeAttr } from './html.js';
+import type { IRequestContext as IRequestContextData, RenderOptions, SSREngine } from './types';
+import { IRequestContext, resolveRequestContext } from './tokens';
+import { escapeAttr } from './html';
 
 export { IRequestContext, resolveRequestContext };
 

@@ -5,9 +5,10 @@
  */
 
 // Server-side API
-export { renderAurelia, renderToString, detectDefaultSSREngine } from './render.js';
-export { IRequestContext, resolveRequestContext } from './tokens.js';
-export { serializeState, validatePayload, stringifyPayload } from './serialize.js';
+export { renderAurelia, renderToString, detectDefaultSSREngine } from './render';
+export { renderDocument, resolveComponentName } from './document';
+export { IRequestContext, resolveRequestContext } from './tokens';
+export { serializeState, validatePayload, stringifyPayload } from './serialize';
 export {
   DEFAULT_SCRIPT_ID,
   createDocumentShell,
@@ -16,7 +17,7 @@ export {
   escapeHtml,
   escapeAttr,
   validateHtmlStructure,
-} from './html.js';
+} from './html';
 
 // Client-side API
 export {
@@ -25,7 +26,7 @@ export {
   peekHydrationPayload,
   clearHydration,
   createClientHydrator,
-} from './hydrate.js';
+} from './hydrate';
 
 // Pure Generic Types
 export type {
@@ -35,6 +36,7 @@ export type {
   HydrationPayload,
   HydrationResult,
   RenderOptions,
+  RenderDocumentOptions,
   SSREngine,
   SerializeOptions,
   DocumentShell,
@@ -43,6 +45,6 @@ export type {
   HydrateFromServerOptions,
   ClientHydratorOptions,
   IRequestContext as IRequestContextType,
-} from './types.js';
+} from './types';
 
 export const VERSION = '0.2.0';
