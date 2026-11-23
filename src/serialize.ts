@@ -63,6 +63,10 @@ function sanitizeValue(
     return data;
   }
 
+  if (typeof data === 'bigint') {
+    return data.toString();
+  }
+
   if (typeof data === 'function' || typeof data === 'symbol') {
     return undefined;
   }
@@ -119,7 +123,7 @@ export function validatePayload<
 export function stringifyPayload<
   TContext extends Record<string, unknown> = Record<string, unknown>,
   TData = Record<string, unknown>,
->(payload: HydrationPayload<TContext, TData>): string {
+>(payload: HydrationPayload<TContext, TData> | Record<string, unknown>): string {
   return JSON.stringify(payload)
     .replace(/&/g, '\\u0026')
     .replace(/</g, '\\u003c')

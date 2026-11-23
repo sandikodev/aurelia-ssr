@@ -47,6 +47,12 @@ describe('serializeState()', () => {
     expect(validatePayload(payload)).toBe(true);
   });
 
+  it('safely serializes BigInt values without throwing', async () => {
+    const payload = await serializeState({ count: 9007199254740993n }, undefined, 'bigint-test');
+    expect(payload.context.count).toBe('9007199254740993');
+    expect(validatePayload(payload)).toBe(true);
+  });
+
   it('escapes HTML script-breaking characters in stringifyPayload()', async () => {
     const payload = await serializeState(
       { bio: '</script><script>alert("xss")</script>' },
