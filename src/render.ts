@@ -34,7 +34,7 @@ export function detectDefaultSSREngine(): 'jsdom' | 'linkedom' {
   if (
     typeof (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair !== 'undefined' ||
     (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Cloudflare')) ||
-    (typeof process !== 'undefined' && process.env && process.env.WORKER === 'true')
+    (typeof process !== 'undefined' && process.env && (process.env.WORKER === 'true' || process.env.AURELIA_SSR_ENGINE === 'linkedom'))
   ) {
     return 'linkedom';
   }
