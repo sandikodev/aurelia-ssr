@@ -27,18 +27,19 @@ export { IRequestContext, resolveRequestContext };
 
 /**
  * Detect the optimal SSR DOM emulation engine based on the runtime environment:
- * - Detects Cloudflare Workers / `workerd` (via `WebSocketPair` or `Cloudflare` userAgent) -> `'linkedom'`
- * - Defaults to `'jsdom'` on Node.js / Bun.
+ * - Defaults to `'linkedom'` universally (Node.js, Bun, Cloudflare Workers / workerd, Deno)
+ *   providing ~10x higher throughput and zero V8 global leaks.
+ * - Falls back to `'jsdom'` only when explicitly opted in via `AURELIA_SSR_ENGINE=jsdom`.
  */
 export function detectDefaultSSREngine(): 'jsdom' | 'linkedom' {
   if (
-    typeof (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair !== 'undefined' ||
-    (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Cloudflare')) ||
-    (typeof process !== 'undefined' && process.env && (process.env.WORKER === 'true' || process.env.AURELIA_SSR_ENGINE === 'linkedom'))
+    typeof process !== 'undefined' &&
+    process.env &&
+    process.env.AURELIA_SSR_ENGINE === 'jsdom'
   ) {
-    return 'linkedom';
+    return 'jsdom';
   }
-  return 'jsdom';
+  return 'linkedom';
 }
 
 interface SsrScope {
