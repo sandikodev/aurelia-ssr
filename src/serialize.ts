@@ -24,6 +24,7 @@ export async function serializeState<
 ): Promise<HydrationPayload<TContext, TData>> {
   const replacer = options?.replacer;
   const richTypes = options?.richTypes === true;
+  const params = sanitizeParams(options?.params);
 
   try {
     if (richTypes) {
@@ -39,6 +40,7 @@ export async function serializeState<
         ...(encodedData !== undefined ? { initialData: encodedData } : {}),
         encoding: 'rich',
         timestamp: Date.now(),
+        ...(params ? { params } : {}),
       };
     }
 
@@ -53,6 +55,7 @@ export async function serializeState<
       context: cleanedContext,
       initialData: cleanedData,
       timestamp: Date.now(),
+      ...(params ? { params } : {}),
     };
   } catch (error) {
     console.error('[serializeState] ERROR:', error);
@@ -61,8 +64,21 @@ export async function serializeState<
       component: componentName || 'unknown',
       context: {} as TContext,
       timestamp: Date.now(),
+      ...(params ? { params } : {}),
     };
   }
+}
+
+function sanitizeParams(
+  params?: Readonly<Record<string, string>>
+): Readonly<Record<string, string>> | undefined {
+  if (!params || typeof params !== 'object') return undefined;
+  const result: Record<string, string> = Object.create(null) as Record<string, string>;
+  for (const [key, value] of Object.entries(params)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    if (typeof value === 'string') result[key] = value;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function sanitizeValue(

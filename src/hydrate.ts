@@ -96,6 +96,7 @@ export function decodeHydrationPayload<
       initialData: decodedData,
       ssrScope: payload.ssrScope,
       timestamp: payload.timestamp,
+      params: payload.params,
     };
   }
 
@@ -105,6 +106,7 @@ export function decodeHydrationPayload<
     initialData: payload.initialData,
     ssrScope: payload.ssrScope,
     timestamp: payload.timestamp,
+    params: payload.params,
   };
 }
 
@@ -140,6 +142,7 @@ export function hydrateFromServer<
       context: {} as TContext,
       initialData: undefined,
       timestamp: payload.timestamp,
+      params: {},
       stale: true,
     };
   }
@@ -251,7 +254,7 @@ export async function createClientHydrator<
     const requestContext: IRequestContextData<TContext> = {
       data: (hydration?.context ?? {}) as TContext,
       url: window.location?.href ?? 'http://localhost/',
-      params: {},
+      params: hydration?.params ?? {},
       query: window.location
         ? Object.fromEntries(new URLSearchParams(window.location.search))
         : {},

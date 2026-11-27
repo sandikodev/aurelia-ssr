@@ -134,6 +134,14 @@ export function encodeRichValue(
   return table;
 }
 
+function isRefIndex(value: unknown, len: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < len;
+}
+
+/**
+ * Decodes a reference table defensively. Malformed or truncated payloads yield
+ * `undefined` for the affected values instead of throwing during hydration.
+ */
 export function decodeRichValue<T = unknown>(table: unknown): T {
   if (!Array.isArray(table) || table.length === 0) {
     return undefined as T;
@@ -167,19 +175,32 @@ export function decodeRichValue<T = unknown>(table: unknown): T {
                   ? -0
                   : Number(raw);
       } else if (tag === TAG_BIGINT && typeof entry[1] === 'string') {
-        resolved[i] = BigInt(entry[1]);
+        try {
+          resolved[i] = BigInt(entry[1]);
+        } catch {
+          resolved[i] = undefined;
+        }
       } else if (tag === TAG_DATE && typeof entry[1] === 'string') {
         resolved[i] = entry[1] === 'NaN' ? new Date(Number.NaN) : new Date(entry[1]);
       } else if (tag === TAG_REGEXP && typeof entry[1] === 'string') {
-        resolved[i] = new RegExp(entry[1], typeof entry[2] === 'string' ? entry[2] : '');
+        try {
+          resolved[i] = new RegExp(entry[1], typeof entry[2] === 'string' ? entry[2] : '');
+        } catch {
+          resolved[i] = undefined;
+        }
       } else if (tag === TAG_URL && typeof entry[1] === 'string') {
-        resolved[i] = new URL(entry[1]);
+        try {
+          resolved[i] = new URL(entry[1]);
+        } catch {
+          resolved[i] = undefined;
+        }
       } else if (tag === TAG_SET && Array.isArray(entry[1])) {
         resolved[i] = new Set();
       } else if (tag === TAG_MAP && Array.isArray(entry[1])) {
         resolved[i] = new Map();
       } else {
-        resolved[i] = Array.from({ length: entry.length });
+        // A corrupted table must not allocate an unbounded array.
+        resolved[i] = Array.from({ length: Math.min(entry.length, len) });
       }
       continue;
     }
@@ -207,24 +228,28 @@ export function decodeRichValue<T = unknown>(table: unknown): T {
 
       if (tag === TAG_SET && Array.isArray(entry[1])) {
         const target = resolved[i] as Set<unknown>;
-        for (const itemIdx of entry[1] as number[]) {
-          target.add(resolved[itemIdx]);
+        for (const itemIdx of entry[1]) {
+          if (isRefIndex(itemIdx, len)) {
+            target.add(resolved[itemIdx]);
+          }
         }
         continue;
       }
 
       if (tag === TAG_MAP && Array.isArray(entry[1])) {
         const target = resolved[i] as Map<unknown, unknown>;
-        for (const pair of entry[1] as Array<[number, number]>) {
-          target.set(resolved[pair[0]], resolved[pair[1]]);
+        for (const pair of entry[1]) {
+          if (Array.isArray(pair) && isRefIndex(pair[0], len) && isRefIndex(pair[1], len)) {
+            target.set(resolved[pair[0]], resolved[pair[1]]);
+          }
         }
         continue;
       }
 
       const arr = resolved[i] as unknown[];
-      for (let j = 0; j < entry.length; j++) {
+      for (let j = 0; j < arr.length; j++) {
         const refIdx = entry[j];
-        arr[j] = typeof refIdx === 'number' ? resolved[refIdx] : refIdx;
+        arr[j] = isRefIndex(refIdx, len) ? resolved[refIdx] : undefined;
       }
       continue;
     }
@@ -232,7 +257,7 @@ export function decodeRichValue<T = unknown>(table: unknown): T {
     const obj = resolved[i] as Record<string, unknown>;
     for (const [k, refIdx] of Object.entries(entry as Record<string, unknown>)) {
       if (FORBIDDEN_KEYS.has(k)) continue;
-      if (typeof refIdx === 'number') {
+      if (isRefIndex(refIdx, len)) {
         obj[k] = resolved[refIdx];
       }
     }

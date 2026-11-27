@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { serializeState, validatePayload, stringifyPayload } from '../src/serialize';
 import { decodeHydrationPayload } from '../src/hydrate';
+import { decodeRichValue } from '../src/codec';
 
 describe('serializeState()', () => {
   it('preserves arbitrary application keys without opinionated regex redaction', async () => {
@@ -179,5 +180,62 @@ describe('serializeState()', () => {
     });
     expect(decoded.context).toEqual({ theme: 'dark' });
     expect(decoded.initialData).toEqual({ hits: 3 });
+  });
+
+  it('carries route params through serialization and hydration', async () => {
+    const payload = await serializeState({ user: 'ayu' }, { hits: 3 }, 'detail-page', {
+      params: { id: '42' },
+    });
+
+    expect(payload.params).toEqual({ id: '42' });
+    expect(decodeHydrationPayload(payload).params).toEqual({ id: '42' });
+  });
+
+  it('sanitizes route params without allowing prototype pollution', async () => {
+    const payload = await serializeState({}, undefined, 'param-page', {
+      params: JSON.parse('{"__proto__":{"polluted":true},"slug":"safe"}') as Record<string, string>,
+    });
+
+    expect(payload.params).toEqual({ slug: 'safe' });
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+
+  it('tolerates corrupt rich tables instead of throwing during hydration', () => {
+    const decoded = decodeRichValue<Record<string, unknown>>([
+      {
+        ok: 1,
+        badRef: 99,
+        negative: -1,
+        big: 2,
+        url: 3,
+        regex: 4,
+        set: 5,
+        map: 6,
+        list: 7,
+      },
+      'hello',
+      ['$b', 'not-a-bigint'],
+      ['$l', 'not a url'],
+      ['$r', '[', ''],
+      ['$s', [1, 99, -2]],
+      ['$m', [[1, 2], [99, 1], ['x', 1]]],
+      [1, 99, -1, 2],
+    ]);
+
+    expect(decoded.ok).toBe('hello');
+    expect(decoded.badRef).toBeUndefined();
+    expect(decoded.negative).toBeUndefined();
+    expect(decoded.big).toBeUndefined();
+    expect(decoded.url).toBeUndefined();
+    expect(decoded.regex).toBeUndefined();
+    expect(decoded.set).toEqual(new Set(['hello']));
+    const map = decoded.map as Map<unknown, unknown>;
+    expect(map.size).toBe(1);
+    expect(map.has('hello')).toBe(true);
+    expect(decoded.list).toEqual(['hello', undefined, undefined, undefined]);
+
+    // A malicious length must not allocate an unbounded array.
+    const huge = decodeRichValue<unknown[]>([Array.from({ length: 100_000 }, () => 0)]);
+    expect(huge.length).toBe(1);
   });
 });

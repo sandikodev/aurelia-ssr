@@ -41,6 +41,8 @@ export interface HydrationPayload<
   readonly ssrScope?: ISSRScope;
   readonly encoding?: 'json' | 'rich';
   readonly timestamp: number;
+  /** Route parameters captured by the server router, replayed during client hydration/navigation. */
+  readonly params?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -55,6 +57,8 @@ export interface HydrationResult<
   readonly initialData?: TData;
   readonly ssrScope?: ISSRScope;
   readonly timestamp: number;
+  /** Route parameters captured by the server router, replayed during client hydration/navigation. */
+  readonly params?: Readonly<Record<string, string>>;
   /** True when an explicit `maxAge` expired; component identity is still usable. */
   readonly stale?: boolean;
 }
@@ -119,6 +123,11 @@ export interface SerializeOptions {
    * circular/shared object references across SSR hydration while staying 100% JSON/CSP-safe.
    */
   richTypes?: boolean;
+  /**
+   * Route params to embed in the hydration payload so client-side `IRequestContext.params`
+   * matches the server render instead of being empty during soft navigation.
+   */
+  params?: Readonly<Record<string, string>>;
 }
 
 /**
