@@ -9,6 +9,7 @@ export { renderAurelia, renderToString, detectDefaultSSREngine } from './render'
 export { renderDocument, resolveComponentName } from './document';
 export { IRequestContext, resolveRequestContext } from './tokens';
 export { serializeState, validatePayload, stringifyPayload } from './serialize';
+export { encodeRichValue, decodeRichValue } from './codec';
 export {
   DEFAULT_SCRIPT_ID,
   createDocumentShell,
@@ -21,6 +22,7 @@ export {
 
 // Client-side API
 export {
+  decodeHydrationPayload,
   hydrateFromServer,
   isHydrationAvailable,
   peekHydrationPayload,

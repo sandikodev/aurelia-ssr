@@ -8,6 +8,7 @@
  */
 
 import type { HydrationPayload, SerializeOptions } from './types';
+import { encodeRichValue } from './codec';
 
 /**
  * Serialize request context and initial loader data into a HydrationPayload.
@@ -22,8 +23,25 @@ export async function serializeState<
   options?: SerializeOptions
 ): Promise<HydrationPayload<TContext, TData>> {
   const replacer = options?.replacer;
+  const richTypes = options?.richTypes === true;
 
   try {
+    if (richTypes) {
+      const encodedContext = encodeRichValue(context ?? {}, replacer) as unknown as TContext;
+      const encodedData =
+        initialData !== undefined
+          ? (encodeRichValue(initialData, replacer) as unknown as TData)
+          : undefined;
+
+      return {
+        component: componentName || 'unknown',
+        context: encodedContext,
+        ...(encodedData !== undefined ? { initialData: encodedData } : {}),
+        encoding: 'rich',
+        timestamp: Date.now(),
+      };
+    }
+
     const cleanedContext = (sanitizeValue('', context, replacer) ?? {}) as TContext;
     const cleanedData =
       initialData !== undefined

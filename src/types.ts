@@ -39,6 +39,7 @@ export interface HydrationPayload<
   readonly context: TContext;
   readonly initialData?: TData;
   readonly ssrScope?: ISSRScope;
+  readonly encoding?: 'json' | 'rich';
   readonly timestamp: number;
 }
 
@@ -54,6 +55,8 @@ export interface HydrationResult<
   readonly initialData?: TData;
   readonly ssrScope?: ISSRScope;
   readonly timestamp: number;
+  /** True when an explicit `maxAge` expired; component identity is still usable. */
+  readonly stale?: boolean;
 }
 
 /**
@@ -110,6 +113,12 @@ export interface SerializeOptions {
    * Return `undefined` to omit a property from the serialized payload.
    */
   replacer?: (key: string, value: unknown) => unknown;
+  /**
+   * When `true`, encodes `context` and `initialData` with a structured JSON reference table
+   * preserving `Date`, `Map`, `Set`, `BigInt`, `RegExp`, `URL`, special numbers, and
+   * circular/shared object references across SSR hydration while staying 100% JSON/CSP-safe.
+   */
+  richTypes?: boolean;
 }
 
 /**
@@ -174,7 +183,10 @@ export interface DocumentOptions<
 export interface HydrateFromServerOptions {
   /** DOM `id` of the `<script type="application/json">` element (default: `'__AURELIA_SSR_DATA__'`). */
   scriptId?: string;
-  /** Maximum acceptable payload age in ms (default: `30000`). */
+  /**
+   * Optional maximum payload age in ms. Disabled (`Infinity`) by default so CDN-cached,
+   * prerendered, and clock-skewed pages hydrate reliably unless a strict TTL is opted in.
+   */
   maxAge?: number;
 }
 
@@ -210,7 +222,7 @@ export interface ClientHydratorOptions<
   registrations?: readonly unknown[];
   /** DOM `id` of the JSON hydration script (default: `'__AURELIA_SSR_DATA__'`). */
   scriptId?: string;
-  /** Maximum acceptable payload age in ms (default: `30000`). */
+  /** Optional maximum payload age in ms; validation is off by default. */
   maxAge?: number;
   onHydrated?: (
     componentName: string,

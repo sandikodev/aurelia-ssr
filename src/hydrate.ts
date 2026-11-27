@@ -6,7 +6,7 @@
  * elements — zero `window` global pollution and zero server/JSDOM dependencies.
  */
 
-import { Aurelia, CustomElement, Registration, type Constructable } from 'aurelia';
+import { AppTask, Aurelia, CustomElement, IAppRoot, Registration, type Constructable } from 'aurelia';
 import type {
   ClientHydratorOptions,
   HydrateFromServerOptions,
@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { IRequestContext, resolveRequestContext } from './tokens';
 import { DEFAULT_SCRIPT_ID } from './html';
+import { decodeRichValue } from './codec';
 
 export { IRequestContext, resolveRequestContext };
 export type { HydrationResult, ClientHydratorOptions, HydrateFromServerOptions };
@@ -78,6 +79,35 @@ export function clearHydration(scriptId = DEFAULT_SCRIPT_ID): void {
   findScriptElement(scriptId)?.remove();
 }
 
+export function decodeHydrationPayload<
+  TData = Record<string, unknown>,
+  TContext extends Record<string, unknown> = Record<string, unknown>,
+>(payload: HydrationPayload<TContext, TData>): HydrationResult<TData, TContext> {
+  if (payload.encoding === 'rich') {
+    const decodedContext = (decodeRichValue<TContext>(payload.context) ?? {}) as TContext;
+    const decodedData =
+      payload.initialData !== undefined
+        ? decodeRichValue<TData>(payload.initialData)
+        : undefined;
+
+    return {
+      component: payload.component,
+      context: decodedContext,
+      initialData: decodedData,
+      ssrScope: payload.ssrScope,
+      timestamp: payload.timestamp,
+    };
+  }
+
+  return {
+    component: payload.component,
+    context: payload.context,
+    initialData: payload.initialData,
+    ssrScope: payload.ssrScope,
+    timestamp: payload.timestamp,
+  };
+}
+
 /**
  * Extract, validate, and consume the server-rendered hydration payload
  * from `<script id="__AURELIA_SSR_DATA__" type="application/json">`.
@@ -87,7 +117,7 @@ export function hydrateFromServer<
   TContext extends Record<string, unknown> = Record<string, unknown>,
 >(options?: HydrateFromServerOptions): HydrationResult<TData, TContext> | null {
   const scriptId = options?.scriptId ?? DEFAULT_SCRIPT_ID;
-  const maxAge = options?.maxAge ?? 30_000;
+  const maxAge = options?.maxAge ?? Infinity;
 
   const el = findScriptElement(scriptId);
   if (!el || !el.textContent) {
@@ -100,23 +130,24 @@ export function hydrateFromServer<
   const payload = parsed as HydrationPayload<TContext, TData>;
   const age = Date.now() - payload.timestamp;
 
-  if (age > maxAge) {
+  if (Number.isFinite(maxAge) && age > maxAge) {
     console.warn(
       `Hydration payload is stale (age: ${age}ms, max: ${maxAge}ms). Falling back to client state.`
     );
-    return null;
+    el.remove();
+    return {
+      component: payload.component,
+      context: {} as TContext,
+      initialData: undefined,
+      timestamp: payload.timestamp,
+      stale: true,
+    };
   }
 
   // Consume once by removing the inert script node from the DOM
   el.remove();
 
-  return {
-    component: payload.component,
-    context: payload.context,
-    initialData: payload.initialData,
-    ssrScope: payload.ssrScope,
-    timestamp: payload.timestamp,
-  };
+  return decodeHydrationPayload<TData, TContext>(payload);
 }
 
 function kebabCase(str: string): string {
@@ -187,6 +218,7 @@ export async function createClientHydrator<
     return null;
   }
 
+  const peekedComponent = peekHydrationPayload(options.scriptId)?.component;
   const hydration = hydrateFromServer<TData, TContext>({
     scriptId: options.scriptId,
     maxAge: options.maxAge,
@@ -202,7 +234,7 @@ export async function createClientHydrator<
   }
 
   const registry = indexComponents(options.components);
-  const componentName = hydration?.component ?? '';
+  const componentName = hydration?.component ?? peekedComponent ?? '';
   const ComponentClass = (componentName ? registry.get(componentName) : undefined) ?? options.fallback;
 
   if (!ComponentClass) {
@@ -233,6 +265,15 @@ export async function createClientHydrator<
       app.register(...options.registrations);
     }
 
+    if (hydration?.initialData && typeof hydration.initialData === 'object') {
+      const initialProps = hydration.initialData;
+      app.register(
+        AppTask.activating(IAppRoot, (root) => {
+          Object.assign(root.controller.viewModel as object, initialProps);
+        })
+      );
+    }
+
     if (hydration?.ssrScope) {
       const root = await app.hydrate({
         host,
@@ -240,22 +281,15 @@ export async function createClientHydrator<
         ssrScope: hydration.ssrScope,
       });
       const instance = root.controller.viewModel as object;
-      if (hydration.initialData && typeof hydration.initialData === 'object') {
-        Object.assign(instance, hydration.initialData);
-      }
       options.onHydrated?.(componentName || ComponentClass.name, instance, hydration);
       return instance;
-    }
-
-    const rootInstance = app.container.get(ComponentClass) as object;
-    if (hydration?.initialData && typeof hydration.initialData === 'object') {
-      Object.assign(rootInstance, hydration.initialData);
     }
 
     // Cleanly replace static SSR HTML nodes in the host container to prevent duplicate rendering
     host.replaceChildren();
 
-    await app.app({ host, component: rootInstance }).start();
+    await app.app({ host, component: ComponentClass }).start();
+    const rootInstance = app.root.controller.viewModel as object;
     options.onHydrated?.(componentName || ComponentClass.name, rootInstance, hydration);
     return rootInstance;
   } catch (err) {

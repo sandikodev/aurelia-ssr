@@ -8,9 +8,11 @@
  */
 
 import {
+  AppTask,
   Aurelia,
   CustomElement,
   DI,
+  IAppRoot,
   IPlatform,
   ITemplateElementFactory,
   Registration,
@@ -316,21 +318,26 @@ export async function renderAurelia<
       app.register(...registrations);
     }
 
-    const rootComponent: object =
-      typeof component === 'function'
-        ? (app.container.get(component as Constructable<TComponent>) as object)
-        : component;
-
-    if (props) {
-      Object.assign(rootComponent, props);
-    }
-
     const host = scope.host;
     if (!host) {
       throw new Error('renderAurelia: host element #ssr-root not found');
     }
 
-    await app.app({ host, component: rootComponent }).start();
+    if (typeof component === 'function') {
+      if (props && typeof props === 'object') {
+        app.register(
+          AppTask.activating(IAppRoot, (root) => {
+            Object.assign(root.controller.viewModel as object, props);
+          })
+        );
+      }
+      await app.app({ host, component: component as Constructable<TComponent> }).start();
+    } else {
+      if (props && typeof props === 'object') {
+        Object.assign(component, props);
+      }
+      await app.app({ host, component }).start();
+    }
 
     if (settle && settle > 0) {
       await new Promise((done) => setTimeout(done, settle));
@@ -343,7 +350,7 @@ export async function renderAurelia<
     return await raceWithTimeout(renderTask, timeout);
   } finally {
     try {
-      await app.stop();
+      await app.stop(true);
     } catch {
       // Ignore stop errors if startup failed or timed out
     }

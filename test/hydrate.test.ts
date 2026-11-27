@@ -102,9 +102,87 @@ describe('HTML5 JSON script client hydration', () => {
     expect(isHydrationAvailable()).toBe(false);
   });
 
-  it('rejects stale payloads exceeding maxAge', () => {
-    mountPayloadScript(createPayload({ timestamp: Date.now() - 60_000 }));
-    expect(hydrateFromServer({ maxAge: 30_000 })).toBeNull();
+  it('keeps component identity but drops data from stale payloads exceeding maxAge', () => {
+    mountPayloadScript(
+      createPayload({ component: 'cached-landing', timestamp: Date.now() - 60_000 })
+    );
+    const stale = hydrateFromServer({ maxAge: 30_000 });
+    expect(stale?.component).toBe('cached-landing');
+    expect(stale?.stale).toBe(true);
+    expect(stale?.initialData).toBeUndefined();
+    expect(stale?.context).toEqual({});
+  });
+
+  it('hydrates CDN-cached / SSG payloads of any age by default and falls back cleanly when explicit maxAge expires', async () => {
+    // 1-hour-old CDN cached payload succeeds when no maxAge TTL is forced
+    mountPayloadScript(
+      createPayload({
+        component: 'cached-landing',
+        initialData: { hero: 'Cached Hero' },
+        timestamp: Date.now() - 3_600_000,
+      })
+    );
+    const cached = hydrateFromServer<{ hero: string }>();
+    expect(cached).not.toBeNull();
+    expect(cached?.initialData?.hero).toBe('Cached Hero');
+
+    // Even when explicit maxAge expires, createClientHydrator still mounts the peeked component
+    const CachedLanding = CustomElement.define(
+      { name: 'cached-landing', template: '<p>${hero}</p>' },
+      class {
+        hero = 'Client Default Hero';
+      }
+    );
+
+    mountPayloadScript(
+      createPayload({
+        component: 'cached-landing',
+        initialData: { hero: 'Expired Server Hero' },
+        timestamp: Date.now() - 120_000,
+      })
+    );
+
+    await createClientHydrator({
+      components: [CachedLanding],
+      maxAge: 5_000,
+    });
+
+    const host = dom.window.document.querySelector('app-root')!;
+    expect(host.innerHTML).toContain('Client Default Hero');
+  });
+
+  it('injects rich-encoded initialData before binding() runs via AppTask.activating', async () => {
+    const { serializeState } = await import('../src/serialize');
+    let observedDateDuringBinding = false;
+
+    const EventWidget = CustomElement.define(
+      { name: 'event-widget', template: '<span>${startsAt.toISOString()}</span>' },
+      class {
+        startsAt: Date = new Date(0);
+        binding() {
+          observedDateDuringBinding =
+            this.startsAt instanceof Date &&
+            this.startsAt.toISOString() === '2026-12-01T10:00:00.000Z';
+        }
+      }
+    );
+
+    const payload = await serializeState(
+      {},
+      { startsAt: new Date('2026-12-01T10:00:00.000Z') },
+      'event-widget',
+      { richTypes: true }
+    );
+    mountPayloadScript(payload);
+
+    await createClientHydrator({
+      components: [EventWidget],
+    });
+
+    expect(observedDateDuringBinding).toBe(true);
+    expect(dom.window.document.querySelector('app-root')!.innerHTML).toContain(
+      '2026-12-01T10:00:00.000Z'
+    );
   });
 
   it('supports custom scriptId and clearHydration()', () => {
