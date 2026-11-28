@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'bun:test';
-import { serializeState, validatePayload, stringifyPayload } from '../src/serialize';
+import {
+  serializeState,
+  serializeStateStream,
+  validatePayload,
+  stringifyPayload,
+} from '../src/serialize';
 import { decodeHydrationPayload } from '../src/hydrate';
 import { decodeRichValue } from '../src/codec';
+import { DEFERRED_SCRIPT_ATTR, createDeferredScript } from '../src/html';
 
 describe('serializeState()', () => {
   it('preserves arbitrary application keys without opinionated regex redaction', async () => {
@@ -237,5 +243,100 @@ describe('serializeState()', () => {
     // A malicious length must not allocate an unbounded array.
     const huge = decodeRichValue<unknown[]>([Array.from({ length: 100_000 }, () => 0)]);
     expect(huge.length).toBe(1);
+
+    // Non-string deferred promise marker ID should safely fall back to undefined.
+    const badDeferred = decodeRichValue<{ p: unknown }>([{ p: 1 }, ['$p', 123]]);
+    expect(badDeferred.p).toBeUndefined();
+  });
+});
+
+describe('serializeStateStream() & createDeferredScript()', () => {
+  it('encodes unresolved promises immediately without blocking and tracks them in pending', async () => {
+    let resolveUser!: (v: { name: string; joinedAt: Date }) => void;
+    let resolveSession!: (v: { role: string }) => void;
+    const userPromise = new Promise<{ name: string; joinedAt: Date }>((r) => {
+      resolveUser = r;
+    });
+    const sessionPromise = new Promise<{ role: string }>((r) => {
+      resolveSession = r;
+    });
+
+    const { payload, pending } = serializeStateStream(
+      { session: sessionPromise, locale: 'id' },
+      { user: userPromise, sharedUser: userPromise, title: 'Instant Shell' },
+      'stream-page',
+      {
+        deferredPrefix: 'chunk-',
+        params: { id: '99' },
+      }
+    );
+
+    // Returned synchronously while promises are still unresolved
+    expect(payload.encoding).toBe('rich');
+    expect(payload.component).toBe('stream-page');
+    expect(payload.params).toEqual({ id: '99' });
+    expect(pending.length).toBe(2);
+    expect(pending[0]?.id).toBe('chunk-1');
+    expect(pending[1]?.id).toBe('chunk-2');
+
+    const wire = stringifyPayload(payload);
+    expect(wire).toContain('["$p","chunk-1"]');
+    expect(wire).toContain('["$p","chunk-2"]');
+
+    const decoded = decodeHydrationPayload<
+      {
+        user: Promise<{ name: string; joinedAt: Date }>;
+        sharedUser: Promise<{ name: string; joinedAt: Date }>;
+        title: string;
+      },
+      { session: Promise<{ role: string }>; locale: string }
+    >(JSON.parse(wire));
+
+    expect(decoded.initialData?.title).toBe('Instant Shell');
+    expect(decoded.context.locale).toBe('id');
+    expect(decoded.initialData?.user).toBeInstanceOf(Promise);
+    expect(decoded.initialData?.user).toBe(decoded.initialData?.sharedUser);
+    expect(decoded.context.session).toBeInstanceOf(Promise);
+
+    // Resolve server promises via custom resolvePromise hook in a separate decode check
+    resolveSession({ role: 'admin' });
+    resolveUser({ name: 'Ayu', joinedAt: new Date('2026-12-01T00:00:00.000Z') });
+
+    const settledMap = new Map<string, unknown>();
+    for (const item of pending) {
+      settledMap.set(item.id, await item.promise);
+    }
+
+    const customDecoded = decodeRichValue<{
+      user: Promise<{ name: string; joinedAt: Date }>;
+    }>(payload.initialData, {
+      resolvePromise: (id) => Promise.resolve(settledMap.get(id)),
+    });
+
+    const resolvedUser = await customDecoded.user;
+    expect(resolvedUser.name).toBe('Ayu');
+    expect(resolvedUser.joinedAt).toBeInstanceOf(Date);
+  });
+
+  it('emits XSS-safe inert deferred scripts for fulfilled rich values and rejected errors', () => {
+    const okHtml = createDeferredScript('d1"evil', {
+      bio: '</script><script>alert("xss")</script>',
+      createdAt: new Date('2026-05-01T12:00:00.000Z'),
+      tags: new Set(['fast', 'csp']),
+    });
+
+    expect(okHtml).toContain(`<script type="application/json" ${DEFERRED_SCRIPT_ATTR}="d1&quot;evil">`);
+    expect(okHtml).not.toContain('</script><script>');
+    expect(okHtml).toContain('\\u003c/script\\u003e');
+
+    const err = new TypeError('Bad chunk </script>');
+    err.stack = 'SECRET_STACK_TRACE_LINE';
+    const errHtml = createDeferredScript('d2', undefined, { error: err });
+
+    expect(errHtml).toContain(`<script type="application/json" ${DEFERRED_SCRIPT_ATTR}="d2">`);
+    expect(errHtml).toContain('"ok":false');
+    expect(errHtml).toContain('"name":"TypeError"');
+    expect(errHtml).not.toContain('</script><script>');
+    expect(errHtml).not.toContain('SECRET_STACK_TRACE_LINE');
   });
 });

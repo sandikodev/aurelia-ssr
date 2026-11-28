@@ -240,3 +240,60 @@ export interface ClientHydratorOptions<
   ) => void;
   onError?: (error: unknown) => void;
 }
+
+/**
+ * Options for `encodeRichValue()`.
+ */
+export interface EncodeRichOptions {
+  replacer?: (key: string, value: unknown) => unknown;
+  /** Called when a `Promise` / thenable is encountered; must return a unique deferred chunk ID. */
+  onPromise?: (promise: Promise<unknown>) => string;
+}
+
+/**
+ * Options for `decodeRichValue()`.
+ */
+export interface DecodeRichOptions {
+  /** Custom resolver hook for `['$p', id]` deferred promise markers. */
+  resolvePromise?: (id: string) => Promise<unknown>;
+  /** Optional DOM root used to scope the per-document deferred promise registry. */
+  root?: ParentNode | Document | null;
+}
+
+/**
+ * Pending server-side promise tracked during non-blocking `serializeStateStream()`.
+ */
+export interface DeferredPromiseEntry {
+  readonly id: string;
+  readonly promise: Promise<unknown>;
+}
+
+/**
+ * Options for `serializeStateStream()`.
+ */
+export interface SerializeStreamOptions extends SerializeOptions {
+  /** Prefix used when generating deferred chunk IDs (default: `'d'`). */
+  deferredPrefix?: string;
+}
+
+/**
+ * Result of `serializeStateStream()`: immediate initial payload plus pending server promises.
+ */
+export interface SerializedStateStream<
+  TContext extends Record<string, unknown> = Record<string, unknown>,
+  TData = Record<string, unknown>,
+> {
+  readonly payload: HydrationPayload<TContext, TData>;
+  readonly pending: readonly DeferredPromiseEntry[];
+}
+
+/**
+ * Options for `createDeferredScript()`.
+ */
+export interface DeferredScriptOptions {
+  replacer?: (key: string, value: unknown) => unknown;
+  /** Set to an error value (or `true` when passing the error as `value`) to emit a rejection chunk. */
+  error?: unknown;
+  /** Optional hook if the resolved value itself contains nested promises. */
+  onPromise?: (promise: Promise<unknown>) => string;
+}

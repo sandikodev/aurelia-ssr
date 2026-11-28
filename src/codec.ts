@@ -7,6 +7,13 @@
  * standard `<script type="application/json">` payloads without inline JS execution.
  */
 
+import {
+  claimDeferredPromise,
+  getDeferredRegistry,
+  type DeferredRegistry,
+} from './deferred';
+import type { DecodeRichOptions, EncodeRichOptions } from './types';
+
 const TAG_UNDEF = '$u';
 const TAG_NUM = '$n';
 const TAG_BIGINT = '$b';
@@ -15,13 +22,30 @@ const TAG_REGEXP = '$r';
 const TAG_URL = '$l';
 const TAG_SET = '$s';
 const TAG_MAP = '$m';
+const TAG_PROMISE = '$p';
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+function isPromiseLike(value: object): value is Promise<unknown> {
+  return (
+    value instanceof Promise ||
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
 export function encodeRichValue(
   rootValue: unknown,
-  replacer?: (key: string, value: unknown) => unknown
+  replacerOrOptions?: ((key: string, value: unknown) => unknown) | EncodeRichOptions,
+  maybeOptions?: EncodeRichOptions
 ): unknown[] {
+  const options =
+    typeof replacerOrOptions === 'object' && replacerOrOptions !== null
+      ? replacerOrOptions
+      : maybeOptions;
+  const replacer =
+    typeof replacerOrOptions === 'function' ? replacerOrOptions : options?.replacer;
+  const onPromise = options?.onPromise;
+
   const table: unknown[] = [];
   const memo = new Map<object, number>();
 
@@ -71,6 +95,11 @@ export function encodeRichValue(
       const idx = table.length;
       table.push(null);
       memo.set(val, idx);
+
+      if (isPromiseLike(val)) {
+        table[idx] = onPromise ? [TAG_PROMISE, onPromise(val)] : [TAG_UNDEF];
+        return idx;
+      }
 
       if (val instanceof Date) {
         table[idx] = [TAG_DATE, Number.isNaN(val.getTime()) ? 'NaN' : val.toISOString()];
@@ -142,13 +171,18 @@ function isRefIndex(value: unknown, len: number): value is number {
  * Decodes a reference table defensively. Malformed or truncated payloads yield
  * `undefined` for the affected values instead of throwing during hydration.
  */
-export function decodeRichValue<T = unknown>(table: unknown): T {
+export function decodeRichValue<T = unknown>(
+  table: unknown,
+  options?: DecodeRichOptions
+): T {
   if (!Array.isArray(table) || table.length === 0) {
     return undefined as T;
   }
 
   const len = table.length;
   const resolved: unknown[] = Array.from({ length: len });
+  const registry: DeferredRegistry = getDeferredRegistry(options?.root);
+  const localDeferred = new Map<string, Promise<unknown>>();
 
   // Pass 1: instantiate leaf values and empty container shells for cycle safety
   for (let i = 0; i < len; i++) {
@@ -194,6 +228,20 @@ export function decodeRichValue<T = unknown>(table: unknown): T {
         } catch {
           resolved[i] = undefined;
         }
+      } else if (tag === TAG_PROMISE) {
+        if (typeof entry[1] === 'string') {
+          const id = entry[1];
+          let promise = localDeferred.get(id);
+          if (!promise) {
+            promise = options?.resolvePromise
+              ? options.resolvePromise(id)
+              : claimDeferredPromise(id, registry);
+            localDeferred.set(id, promise);
+          }
+          resolved[i] = promise;
+        } else {
+          resolved[i] = undefined;
+        }
       } else if (tag === TAG_SET && Array.isArray(entry[1])) {
         resolved[i] = new Set();
       } else if (tag === TAG_MAP && Array.isArray(entry[1])) {
@@ -221,7 +269,8 @@ export function decodeRichValue<T = unknown>(table: unknown): T {
         tag === TAG_BIGINT ||
         tag === TAG_DATE ||
         tag === TAG_REGEXP ||
-        tag === TAG_URL
+        tag === TAG_URL ||
+        tag === TAG_PROMISE
       ) {
         continue;
       }

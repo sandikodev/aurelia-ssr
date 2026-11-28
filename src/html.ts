@@ -7,14 +7,17 @@
  */
 
 import type {
+  DeferredScriptOptions,
   DocumentOptions,
   DocumentShell,
   DocumentTemplateContext,
   HydrationPayload,
 } from './types';
+import { encodeRichValue } from './codec';
 import { stringifyPayload } from './serialize';
 
 export const DEFAULT_SCRIPT_ID = '__AURELIA_SSR_DATA__';
+export const DEFERRED_SCRIPT_ATTR = 'data-au-deferred';
 
 function renderAttrs(attrs?: Readonly<Record<string, string>>): string {
   if (!attrs) return '';
@@ -108,6 +111,57 @@ export function createHydrationScript<
 ): string {
   const payloadJson = stringifyPayload(payload);
   return `<script id="${escapeAttr(scriptId)}" type="application/json">${payloadJson}</script>`;
+}
+
+function extractDeferredErrorPayload(errorValue: unknown): {
+  ok: false;
+  error: string;
+  name?: string;
+} {
+  if (errorValue instanceof Error) {
+    return {
+      ok: false,
+      error: errorValue.message || 'Deferred promise rejected',
+      ...(errorValue.name && errorValue.name !== 'Error' ? { name: errorValue.name } : {}),
+    };
+  }
+  if (typeof errorValue === 'string') {
+    return { ok: false, error: errorValue };
+  }
+  if (
+    errorValue !== null &&
+    typeof errorValue === 'object' &&
+    typeof (errorValue as { message?: unknown }).message === 'string'
+  ) {
+    return {
+      ok: false,
+      error: (errorValue as { message: string }).message,
+    };
+  }
+  return { ok: false, error: String(errorValue) };
+}
+
+/**
+ * Create an inert HTML5 `<script type="application/json" data-au-deferred="<id>">` chunk
+ * for streaming a resolved or rejected server promise with full XSS escaping.
+ */
+export function createDeferredScript(
+  id: string,
+  value: unknown,
+  options?: DeferredScriptOptions
+): string {
+  const hasError = options?.error !== undefined && options.error !== false;
+  const envelope = hasError
+    ? extractDeferredErrorPayload(options.error === true ? value : options.error)
+    : {
+        ok: true,
+        data: encodeRichValue(value, options?.replacer, {
+          onPromise: options?.onPromise,
+        }),
+      };
+
+  const payloadJson = stringifyPayload(envelope);
+  return `<script type="application/json" ${DEFERRED_SCRIPT_ATTR}="${escapeAttr(id)}">${payloadJson}</script>`;
 }
 
 /**

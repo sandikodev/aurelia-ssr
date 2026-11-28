@@ -7,7 +7,13 @@
  * and script-context XSS escaping without opinionated key guessing.
  */
 
-import type { HydrationPayload, SerializeOptions } from './types';
+import type {
+  DeferredPromiseEntry,
+  HydrationPayload,
+  SerializeOptions,
+  SerializeStreamOptions,
+  SerializedStateStream,
+} from './types';
 import { encodeRichValue } from './codec';
 
 /**
@@ -164,4 +170,75 @@ export function stringifyPayload<
     .replace(/>/g, '\\u003e')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Serialize request context and initial loader data without blocking on unresolved `Promise`s.
+ * Any `Promise` or thenable encountered in `context` or `initialData` is encoded as a `['$p', id]`
+ * marker in the initial rich payload and returned in `pending` for late streaming via `createDeferredScript()`.
+ */
+export function serializeStateStream<
+  TContext extends Record<string, unknown> = Record<string, unknown>,
+  TData = Record<string, unknown>,
+>(
+  context: TContext = {} as TContext,
+  initialData?: TData,
+  componentName?: string,
+  options?: SerializeStreamOptions
+): SerializedStateStream<TContext, TData> {
+  const replacer = options?.replacer;
+  const params = sanitizeParams(options?.params);
+  const prefix = options?.deferredPrefix ?? 'd';
+
+  let counter = 0;
+  const pending: DeferredPromiseEntry[] = [];
+  const seenPromises = new Map<object, string>();
+
+  const onPromise = (promise: Promise<unknown>): string => {
+    const existing = seenPromises.get(promise);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const id = `${prefix}${++counter}`;
+    seenPromises.set(promise, id);
+    // Mark as handled so rejections before the caller awaits `pending` do not trigger unhandledRejection.
+    promise.then(undefined, () => {});
+    pending.push({ id, promise });
+    return id;
+  };
+
+  try {
+    const encodedContext = encodeRichValue(context ?? {}, replacer, {
+      onPromise,
+    }) as unknown as TContext;
+    const encodedData =
+      initialData !== undefined
+        ? (encodeRichValue(initialData, replacer, { onPromise }) as unknown as TData)
+        : undefined;
+
+    return {
+      payload: {
+        component: componentName || 'unknown',
+        context: encodedContext,
+        ...(encodedData !== undefined ? { initialData: encodedData } : {}),
+        encoding: 'rich',
+        timestamp: Date.now(),
+        ...(params ? { params } : {}),
+      },
+      pending,
+    };
+  } catch (error) {
+    console.error('[serializeStateStream] ERROR:', error);
+
+    return {
+      payload: {
+        component: componentName || 'unknown',
+        context: [{}] as unknown as TContext,
+        encoding: 'rich',
+        timestamp: Date.now(),
+        ...(params ? { params } : {}),
+      },
+      pending: [],
+    };
+  }
 }

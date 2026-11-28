@@ -17,6 +17,13 @@ import type {
 import { IRequestContext, resolveRequestContext } from './tokens';
 import { DEFAULT_SCRIPT_ID } from './html';
 import { decodeRichValue } from './codec';
+import {
+  getDeferredRegistry,
+  hasPendingDeferred,
+  onDeferredSettled,
+  resolveDocument,
+  settleDeferredPromise,
+} from './deferred';
 
 export { IRequestContext, resolveRequestContext };
 export type { HydrationResult, ClientHydratorOptions, HydrateFromServerOptions };
@@ -82,12 +89,16 @@ export function clearHydration(scriptId = DEFAULT_SCRIPT_ID): void {
 export function decodeHydrationPayload<
   TData = Record<string, unknown>,
   TContext extends Record<string, unknown> = Record<string, unknown>,
->(payload: HydrationPayload<TContext, TData>): HydrationResult<TData, TContext> {
+>(
+  payload: HydrationPayload<TContext, TData>,
+  options?: { root?: ParentNode | Document | null }
+): HydrationResult<TData, TContext> {
   if (payload.encoding === 'rich') {
-    const decodedContext = (decodeRichValue<TContext>(payload.context) ?? {}) as TContext;
+    const decodeOpts = options?.root ? { root: options.root } : undefined;
+    const decodedContext = (decodeRichValue<TContext>(payload.context, decodeOpts) ?? {}) as TContext;
     const decodedData =
       payload.initialData !== undefined
-        ? decodeRichValue<TData>(payload.initialData)
+        ? decodeRichValue<TData>(payload.initialData, decodeOpts)
         : undefined;
 
     return {
@@ -107,6 +118,129 @@ export function decodeHydrationPayload<
     ssrScope: payload.ssrScope,
     timestamp: payload.timestamp,
     params: payload.params,
+  };
+}
+
+const DEFERRED_SCRIPT_SELECTOR = 'script[type="application/json"][data-au-deferred]';
+
+function parseDeferredError(parsed: Record<string, unknown>): Error {
+  const msg =
+    typeof parsed.error === 'string' && parsed.error.length > 0
+      ? parsed.error
+      : 'Deferred promise rejected';
+  const err = new Error(msg);
+  if (typeof parsed.name === 'string' && parsed.name.length > 0) {
+    err.name = parsed.name;
+  }
+  return err;
+}
+
+/**
+ * Scan `root` (defaults to `document`) for inert `<script type="application/json" data-au-deferred="...">`
+ * elements, remove them cleanly from the DOM, decode their payloads with `decodeRichValue`,
+ * and resolve or reject the matching client `Promise`s.
+ */
+export function resolveDeferredScripts(root?: ParentNode | Document | null): number {
+  const target: ParentNode | null =
+    root ?? (typeof document !== 'undefined' ? document : null);
+  if (!target || typeof target.querySelectorAll !== 'function') {
+    return 0;
+  }
+
+  const registry = getDeferredRegistry(target);
+  const scripts = target.querySelectorAll(DEFERRED_SCRIPT_SELECTOR);
+  let processed = 0;
+
+  for (const script of Array.from(scripts)) {
+    const id = script.getAttribute('data-au-deferred');
+    const raw = script.textContent;
+    script.remove();
+
+    if (!id || !raw) {
+      continue;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>;
+        if (obj.ok === false || ('error' in obj && obj.ok !== true)) {
+          settleDeferredPromise(id, false, parseDeferredError(obj), registry);
+        } else if ('data' in obj) {
+          const decoded = decodeRichValue(obj.data, { root: target });
+          settleDeferredPromise(id, true, decoded, registry);
+        } else {
+          settleDeferredPromise(id, true, obj, registry);
+        }
+      } else if (Array.isArray(parsed)) {
+        const decoded = decodeRichValue(parsed, { root: target });
+        settleDeferredPromise(id, true, decoded, registry);
+      } else {
+        settleDeferredPromise(id, true, parsed, registry);
+      }
+      processed++;
+    } catch (err) {
+      settleDeferredPromise(id, false, err, registry);
+      processed++;
+    }
+  }
+
+  return processed;
+}
+
+function resolveMutationObserverCtor(
+  target: ParentNode
+): typeof MutationObserver | undefined {
+  const doc = resolveDocument(target);
+  const win = doc?.defaultView ?? (typeof window !== 'undefined' ? window : undefined);
+  if (win && typeof win.MutationObserver === 'function') {
+    return win.MutationObserver;
+  }
+  if (typeof MutationObserver === 'function') {
+    return MutationObserver;
+  }
+  return undefined;
+}
+
+/**
+ * Observe `root` (defaults to `document`) for streaming `<script type="application/json" data-au-deferred="...">`
+ * chunks via `MutationObserver`, immediately scanning any existing deferred scripts too.
+ * Returns a cleanup function to disconnect the observer.
+ */
+export function observeDeferredHydration(
+  root?: ParentNode | Document | null
+): () => void {
+  const target: ParentNode | null =
+    root ?? (typeof document !== 'undefined' ? document : null);
+  if (!target) {
+    return () => {};
+  }
+
+  resolveDeferredScripts(target);
+
+  const ObserverCtor = resolveMutationObserverCtor(target);
+  if (!ObserverCtor) {
+    return () => {};
+  }
+
+  const observeNode =
+    'nodeType' in target && target.nodeType === 9
+      ? ((target as Document).documentElement ?? target)
+      : target;
+
+  const observer = new ObserverCtor((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.addedNodes.length > 0) {
+        resolveDeferredScripts(target);
+        return;
+      }
+    }
+  });
+
+  observer.observe(observeNode, { childList: true, subtree: true });
+
+  return () => {
+    observer.disconnect();
   };
 }
 
@@ -150,7 +284,9 @@ export function hydrateFromServer<
   // Consume once by removing the inert script node from the DOM
   el.remove();
 
-  return decodeHydrationPayload<TData, TContext>(payload);
+  const result = decodeHydrationPayload<TData, TContext>(payload);
+  resolveDeferredScripts();
+  return result;
 }
 
 function kebabCase(str: string): string {
@@ -226,6 +362,17 @@ export async function createClientHydrator<
     scriptId: options.scriptId,
     maxAge: options.maxAge,
   });
+
+  const registryScope = getDeferredRegistry(document);
+  if (hasPendingDeferred(registryScope)) {
+    const stopDeferred = observeDeferredHydration(document);
+    const unsubscribe = onDeferredSettled(registryScope, () => {
+      if (!hasPendingDeferred(registryScope)) {
+        unsubscribe();
+        stopDeferred();
+      }
+    });
+  }
 
   const host = resolveHostElement(options.target);
   if (!host) {

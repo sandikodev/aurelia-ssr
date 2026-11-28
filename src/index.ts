@@ -8,12 +8,19 @@
 export { renderAurelia, renderToString, detectDefaultSSREngine } from './render';
 export { renderDocument, resolveComponentName } from './document';
 export { IRequestContext, resolveRequestContext } from './tokens';
-export { serializeState, validatePayload, stringifyPayload } from './serialize';
+export {
+  serializeState,
+  serializeStateStream,
+  validatePayload,
+  stringifyPayload,
+} from './serialize';
 export { encodeRichValue, decodeRichValue } from './codec';
 export {
   DEFAULT_SCRIPT_ID,
+  DEFERRED_SCRIPT_ATTR,
   createDocumentShell,
   createHydrationScript,
+  createDeferredScript,
   createHtmlDocument,
   escapeHtml,
   escapeAttr,
@@ -28,6 +35,8 @@ export {
   peekHydrationPayload,
   clearHydration,
   createClientHydrator,
+  resolveDeferredScripts,
+  observeDeferredHydration,
 } from './hydrate';
 
 // Pure Generic Types
@@ -41,6 +50,12 @@ export type {
   RenderDocumentOptions,
   SSREngine,
   SerializeOptions,
+  SerializeStreamOptions,
+  SerializedStateStream,
+  DeferredPromiseEntry,
+  DeferredScriptOptions,
+  EncodeRichOptions,
+  DecodeRichOptions,
   DocumentShell,
   DocumentOptions,
   DocumentTemplateContext,
